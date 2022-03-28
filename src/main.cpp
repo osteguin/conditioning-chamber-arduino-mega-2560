@@ -34,12 +34,12 @@ Elegoo_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 
 /* ------------------------ DS3231 (Real Time Clock) ------------------------ */
 struct ts t;
-int hour=12; 
-int min=30;
-int sec=0;
-int mday=25;
-int mon=12;
-int year=2019;
+int setHour=12; 
+int setMin=30;
+int setSec=0;
+int setDay=25;
+int setMonth=12;
+int setYear=2019;
 
 /* ------------------------- RELAY (AC Power Supply) ------------------------ */
 #define RELAY 25
@@ -63,11 +63,15 @@ DHT dht(DHTPIN, DHTTYPE);
 #define lastBAR 47
 
 /* --------------------- RESISTOR (Capacitor Discharge) --------------------- */
-#define RESISTOR 18
-int dischargeTime = 30;
+#define RESISTOR 30
+unsigned int dischargeTime = 120;
 
 /* ----------------- microSD (Micro SD Card Breakout Board) ----------------- */
-# define PIN_SD_CS 53
+#define PIN_SD_CS 53
+File myFile;
+
+/* ----------------------------------- LED ---------------------------------- */
+#define LED 31
 
 /* -------------------------------------------------------------------------- */
 /*                           Expertiment Parameters                           */
@@ -79,24 +83,46 @@ String stimulationTimeStr;
 String movementAnalysisTimeStr;
 String intervalTimeStr;
 String numberOfEventsStr;
-String experimentAnimalStr;
-String dayOfExperimentStr;
+String experimentAnimalStr = "C-CM 1"; // Missing in HTML
+String dayOfExperimentStr = "1"; // Missing in HTML
 int toneFrequency;
-int toneTime;
-int stimulationTime;
-int movementAnalysisTime;
-int intervalTime;
+unsigned int toneTime;
+unsigned int stimulationTime;
+unsigned int movementAnalysisTime;
+unsigned int intervalTime;
 int numberOfEvents;
-int experimentAnimal; // Missing in HTML
-int dayOfExperiment;  // Missing in HTML
+
 float temperature;
 float humidity;
+
+unsigned long experimentStart;
+unsigned long experimentEnd;
+unsigned long experimentTotalTime;
+
+int hour;
+int minute;
+int seconds;
+int day;
+int month;
+int year;
+int dayStart;
+int monthStart;
+int yearStart;
+int hourStart;
+int minuteStart;
+int secondStart;
+int dayEnd;
+int monthEnd;
+int yearEnd;
+int hourEnd;
+int minuteEnd;
+int secondEnd;
 volatile byte confirmed = false;
 
 /* -------------------------------------------------------------------------- */
 /*                          Temperature and Humidity                          */
 /* -------------------------------------------------------------------------- */
-void ReadTH(){
+void ReadDTH(){
   temperature = dht.readTemperature();
   humidity = dht.readHumidity();
 }
@@ -106,6 +132,12 @@ void ReadTH(){
 /* -------------------------------------------------------------------------- */
 void GetClock(){
   DS3231_get(&t);
+  hour = t.hour;
+  minute = t.min;
+  seconds = t.sec;
+  day = t.mday;
+  month = t.mon;
+  year = t.year;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -125,9 +157,15 @@ void RelayActivation(){
 /*                             Capacitor Discharge                            */
 /* -------------------------------------------------------------------------- */
 void Discharge(){
+  unsigned long timeLimit = dischargeTime * 1000;
+  unsigned long startMillis = millis();
   tft.setCursor(0,0);
   tft.fillScreen(BLACK);
   tft.println("Discharging the capacitor");
+  while(millis() - startMillis < (timeLimit)){
+    digitalWrite(RESISTOR, HIGH);
+  }
+  digitalWrite(RESISTOR, LOW);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -137,6 +175,15 @@ void SaveData(){
   tft.setCursor(0,0);
   tft.fillScreen(BLACK);
   tft.println("Saving Data into the microSD card");
+  myFile = SD.open("data.txt", FILE_WRITE);
+  if (myFile) {
+    String dateStart = String(dayStart) + "/" +  String(monthStart) + "/" + String(yearStart);
+    String timeStart = String(hourStart) + ":" + String(minuteStart) + ":" + String(secondStart);
+    String dateEnd = String(dayEnd) + "/" + String(monthEnd) + "/" + String(yearEnd);
+    String timeEnd = String(hourEnd) + ":" + String(minuteEnd) + ":" + String(secondEnd);
+    String dataToSave = dayOfExperimentStr + "," + experimentAnimalStr + "," + dateStart + "," + timeStart + "," + dateEnd + "," + timeEnd + "," + experimentTotalTime + "," + temperature + "," + humidity + "," + toneFrequencyStr + "," + toneTimeStr + "," + stimulationTimeStr + "," + movementAnalysisTimeStr + "," + intervalTimeStr + "," + numberOfEvents;
+    Serial.println(dataToSave);
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -144,7 +191,7 @@ void SaveData(){
 /* -------------------------------------------------------------------------- */
 void ToneActivation(){
   unsigned int toneFreq = toneFrequency;
-  unsigned long timeLimit = toneTime * 1000;
+  unsigned long timeLimit = toneTime;
   unsigned long startMillis = millis();
   tft.fillScreen(BLUE);
   while(millis() - startMillis < (timeLimit)){
@@ -157,13 +204,15 @@ void ToneActivation(){
 /*                       Floating Ground Bars Activation                      */
 /* -------------------------------------------------------------------------- */
 void Stimulus(){
-  unsigned long timeLimit = stimulationTime * 1000;
+  unsigned long timeLimit = stimulationTime;
   unsigned long startMillis = millis();
   tft.fillScreen(RED);
   while(millis() - startMillis < (timeLimit)){
       for(int i=firstBAR; i<=lastBAR; i++)
         {
           digitalWrite(i, HIGH);
+          delay(50);
+          digitalWrite(i, LOW);
         }
   }
   for(int i=firstBAR; i<=lastBAR; i++)
@@ -176,7 +225,7 @@ void Stimulus(){
 /*                              Motion Detection                              */
 /* -------------------------------------------------------------------------- */
 void MotionDetection(){
-  unsigned long timeLimit = movementAnalysisTime * 1000;
+  unsigned long timeLimit = movementAnalysisTime;
   unsigned long startMillis = millis();
   tft.fillScreen(GREEN);
   while(millis() - startMillis < (timeLimit)){
@@ -184,22 +233,25 @@ void MotionDetection(){
     if (val == HIGH) {
       if (motion == false) {
         motion = true;
+        digitalWrite(LED, HIGH);
         motionCounter++;
-      }
+       }
     }
     else {
       if (motion == true) {
         motion = false;
+        digitalWrite(LED, LOW);
       }
     }
   }
+  digitalWrite(LED, LOW);
 }
 
 /* -------------------------------------------------------------------------- */
 /*                         Waiting Time Between Events                        */
 /* -------------------------------------------------------------------------- */
 void Wait(){
-  unsigned long timeLimit = intervalTime * 1000;
+  unsigned long timeLimit = intervalTime;
   unsigned long startMillis = millis();
   tft.fillScreen(CYAN);
   while(millis() - startMillis < (timeLimit)){
@@ -211,42 +263,82 @@ void Wait(){
 /* -------------------------------------------------------------------------- */
 void VariableConversion(){
   toneFrequency = toneFrequencyStr.toInt();
-  toneTime = toneTimeStr.toInt();
-  stimulationTime = stimulationTimeStr.toInt();
-  movementAnalysisTime = movementAnalysisTimeStr.toInt();
-  intervalTime = intervalTimeStr.toInt();
+  toneTime = toneTimeStr.toInt() * 1000;
+  stimulationTime = stimulationTimeStr.toInt() * 1000;
+  movementAnalysisTime = movementAnalysisTimeStr.toInt() * 1000;
+  intervalTime = intervalTimeStr.toInt() * 1000;
   numberOfEvents = numberOfEventsStr.toInt();
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 Main Screen                                */
+/* -------------------------------------------------------------------------- */
+void MainScreen(){
+  tft.fillScreen(BLACK);
+  tft.setRotation(1);
+  tft.setTextSize(2);
+  tft.setTextColor(GREEN);
+  tft.setCursor(0,0);
+  tft.println("Conditioning Chamber");
+  tft.println("");
+  tft.setTextColor(WHITE);
+  tft.println("SSID: WebChamber");
+  tft.println("PWD: helloworld");
+  tft.println("IP: 192.168.4.1");
 }
 
 /* -------------------------------------------------------------------------- */
 /*                            Full Experiment Event                           */
 /* -------------------------------------------------------------------------- */
 void Experiment(){
+  ReadDTH();
+  experimentStart = millis();
+  motionCounter = 0;
   /* ----------------------- AC Power Supply activation ----------------------- */
   RelayActivation();
   /* -------------------------- Data Type Conversion -------------------------- */
   VariableConversion();
   delay(2000);
+  /* ----------------------- Experiment Start Clock Data ---------------------- */
+  GetClock();
+  dayStart = day;
+  monthStart = month;
+  yearStart = year;
+  hourStart = hour;
+  minuteStart = minute;
+  secondStart = seconds;
   /* --------------- Repetition of events during the experiment --------------- */
-  for(int i= 0; i<numberOfEvents; i++){
+  for(int i= 1; i<=numberOfEvents; i++){
     ToneActivation();
     Stimulus();
     MotionDetection();
     Wait();
     tft.setCursor(0,0);
     tft.fillScreen(BLACK);
-    tft.println("Finished Event " + String(i+1));
+    tft.println("Finished Event " + String(i));
     delay(2000);
   }
+  experimentEnd = millis();
+  experimentTotalTime = (experimentEnd - experimentStart) / 1000;
+  /* ------------------------ Experiment End Clock Data ----------------------- */
+  GetClock();
+  dayEnd = day;
+  monthEnd = month;
+  yearEnd = year;
+  hourEnd = hour;
+  minuteEnd = minute;
+  secondEnd = seconds;
+  /* --------------------- Save data into the microSD card -------------------- */
+  SaveData();
+  delay(2000);
   /* ---------------------- AC Power Supply deactivation ---------------------- */
   RelayActivation();
   delay(2000);
   /* --------------------------- Capacitor Discharge -------------------------- */
   Discharge();
   delay(2000);
-  /* --------------------- Save data into the microSD card -------------------- */
-  SaveData();
-  delay(2000);
+  /* ------------------------------- Main Screen ------------------------------ */
+  MainScreen();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -306,43 +398,34 @@ void setup() {
   Wire.begin();
   /* -------------------------------- LCD Setup ------------------------------- */
   tft.reset();
-  tft.begin(0x9341) ;
-  tft.fillScreen(BLACK);
-  tft.setRotation(1);
-  tft.setTextSize(2);
-  tft.setTextColor(GREEN);
-  tft.setCursor(0,0);
-  tft.println("Conditioning Chamber");
-  tft.println("");
-  tft.setTextColor(WHITE);
-  tft.println("SSID: WebChamber");
-  tft.println("PWD: helloworld");
-  tft.println("IP: 192.168.4.1");
+  tft.begin(0x9341);
+  MainScreen();
   /* -------------------------------- Pin Setup ------------------------------- */
   pinMode(RELAY, OUTPUT);
   digitalWrite(RELAY, HIGH);
   pinMode(RCWL, INPUT);
   pinMode(PAM8406, OUTPUT);
   pinMode(DHTPIN, INPUT);
+  pinMode(RESISTOR, OUTPUT);
   for(int i=firstBAR; i<=lastBAR; i++)
   {
     pinMode(i, OUTPUT);
   }
   /* ------------------------------ DS3231 Setup ------------------------------ */
   DS3231_init(DS3231_CONTROL_INTCN);
-  t.hour=hour; 
-  t.min=min;
-  t.sec=sec;
-  t.mday=mday;
-  t.mon=mon;
-  t.year=year;
+  t.hour=setHour; 
+  t.min=setMin;
+  t.sec=setSec;
+  t.mday=setDay;
+  t.mon=setMonth;
+  t.year=setYear;
   DS3231_set(t);
   /* ------------------------------ microSD Setup ----------------------------- */
-  /*if (!SD.begin(PIN_SD_CS)) { // Inicializa la comunicación con la tarjeta SD con el pin 53 como selector del SPI
-    Serial.println("SD initialization failed, or not present!");
-    while (1); // don't do anything more:
+  if (!SD.begin(PIN_SD_CS)){
+    Serial.println("SD initialization failed.");
+    while (1);
   }else
-  Serial.println("SD initialization done."); */
+  Serial.println("SD initialization done.");
   /* ------------------------------- DTH22 Setup ------------------------------ */
   dht.begin();
 }
