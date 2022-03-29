@@ -34,12 +34,20 @@ Elegoo_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 
 /* ------------------------ DS3231 (Real Time Clock) ------------------------ */
 struct ts t;
+/* ----------------------------- Set Actual Time ---------------------------- */
 int setHour=12; 
 int setMin=30;
 int setSec=0;
 int setDay=25;
 int setMonth=12;
 int setYear=2019;
+
+int hour;
+int minute;
+int seconds;
+int day;
+int month;
+int year;
 
 /* ------------------------- RELAY (AC Power Supply) ------------------------ */
 #define RELAY 25
@@ -64,7 +72,7 @@ DHT dht(DHTPIN, DHTTYPE);
 
 /* --------------------- RESISTOR (Capacitor Discharge) --------------------- */
 #define RESISTOR 30
-unsigned int dischargeTime = 120;
+unsigned int dischargeTime = 150;
 
 /* ----------------- microSD (Micro SD Card Breakout Board) ----------------- */
 #define PIN_SD_CS 53
@@ -76,6 +84,8 @@ File myFile;
 /* -------------------------------------------------------------------------- */
 /*                           Expertiment Parameters                           */
 /* -------------------------------------------------------------------------- */
+
+/* -------------------------- HTML Form User Input -------------------------- */
 String readString;
 String toneFrequencyStr;
 String toneTimeStr;
@@ -83,28 +93,24 @@ String stimulationTimeStr;
 String movementAnalysisTimeStr;
 String intervalTimeStr;
 String numberOfEventsStr;
-String experimentAnimalStr = "C-CM 1"; // Missing in HTML
-String dayOfExperimentStr = "1"; // Missing in HTML
+String experimentAnimalStr; // Missing in HTML
+String dayOfExperimentStr; // Missing in HTML
 int toneFrequency;
 unsigned int toneTime;
 unsigned int stimulationTime;
 unsigned int movementAnalysisTime;
 unsigned int intervalTime;
 int numberOfEvents;
+volatile byte confirmed = false;
 
+/* ------------------------ Temperature and Humidity ------------------------ */
 float temperature;
 float humidity;
 
+/* -------------------------------- Time Data ------------------------------- */
 unsigned long experimentStart;
 unsigned long experimentEnd;
 unsigned long experimentTotalTime;
-
-int hour;
-int minute;
-int seconds;
-int day;
-int month;
-int year;
 int dayStart;
 int monthStart;
 int yearStart;
@@ -117,7 +123,31 @@ int yearEnd;
 int hourEnd;
 int minuteEnd;
 int secondEnd;
-volatile byte confirmed = false;
+
+/* -------------------------------------------------------------------------- */
+/*                                Screen Header                               */
+/* -------------------------------------------------------------------------- */
+void HeaderScreen(){
+  tft.setCursor(0,0);
+  tft.fillScreen(BLACK);
+  tft.setTextColor(GREEN);
+  tft.println("Conditioning Chamber v0.2");
+  tft.setTextColor(WHITE);
+  tft.println("");
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 Main Screen                                */
+/* -------------------------------------------------------------------------- */
+void MainScreen(){
+  tft.fillScreen(BLACK);
+  tft.setRotation(1);
+  tft.setTextSize(2);
+  HeaderScreen();
+  tft.println("SSID: WebChamber");
+  tft.println("PWD: helloworld");
+  tft.println("IP: 192.168.4.1");
+}
 
 /* -------------------------------------------------------------------------- */
 /*                          Temperature and Humidity                          */
@@ -159,9 +189,8 @@ void RelayActivation(){
 void Discharge(){
   unsigned long timeLimit = dischargeTime * 1000;
   unsigned long startMillis = millis();
-  tft.setCursor(0,0);
-  tft.fillScreen(BLACK);
-  tft.println("Discharging the capacitor");
+  HeaderScreen();
+  tft.println("Discharging Capacitor");
   while(millis() - startMillis < (timeLimit)){
     digitalWrite(RESISTOR, HIGH);
   }
@@ -172,16 +201,15 @@ void Discharge(){
 /*                          Save Data to microSD card                         */
 /* -------------------------------------------------------------------------- */
 void SaveData(){
-  tft.setCursor(0,0);
-  tft.fillScreen(BLACK);
-  tft.println("Saving Data into the microSD card");
+  HeaderScreen();
+  tft.println("Saving Data to SD");
   myFile = SD.open("data.txt", FILE_WRITE);
   if (myFile) {
     String dateStart = String(dayStart) + "/" +  String(monthStart) + "/" + String(yearStart);
     String timeStart = String(hourStart) + ":" + String(minuteStart) + ":" + String(secondStart);
     String dateEnd = String(dayEnd) + "/" + String(monthEnd) + "/" + String(yearEnd);
     String timeEnd = String(hourEnd) + ":" + String(minuteEnd) + ":" + String(secondEnd);
-    String dataToSave = dayOfExperimentStr + "," + experimentAnimalStr + "," + dateStart + "," + timeStart + "," + dateEnd + "," + timeEnd + "," + experimentTotalTime + "," + temperature + "," + humidity + "," + toneFrequencyStr + "," + toneTimeStr + "," + stimulationTimeStr + "," + movementAnalysisTimeStr + "," + intervalTimeStr + "," + numberOfEvents;
+    String dataToSave = dayOfExperimentStr + "," + experimentAnimalStr + "," + dateStart + "," + timeStart + "," + dateEnd + "," + timeEnd + "," + experimentTotalTime + "," + temperature + "," + humidity + "," + motionCounter + "," + toneFrequencyStr + "," + toneTimeStr + "," + stimulationTimeStr + "," + movementAnalysisTimeStr + "," + intervalTimeStr + "," + numberOfEvents;
     Serial.println(dataToSave);
   }
 }
@@ -258,6 +286,7 @@ void Wait(){
     motion = false;
   }
 }
+
 /* -------------------------------------------------------------------------- */
 /*                    String to Integer variable conversion                   */
 /* -------------------------------------------------------------------------- */
@@ -271,34 +300,19 @@ void VariableConversion(){
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                 Main Screen                                */
-/* -------------------------------------------------------------------------- */
-void MainScreen(){
-  tft.fillScreen(BLACK);
-  tft.setRotation(1);
-  tft.setTextSize(2);
-  tft.setTextColor(GREEN);
-  tft.setCursor(0,0);
-  tft.println("Conditioning Chamber");
-  tft.println("");
-  tft.setTextColor(WHITE);
-  tft.println("SSID: WebChamber");
-  tft.println("PWD: helloworld");
-  tft.println("IP: 192.168.4.1");
-}
-
-/* -------------------------------------------------------------------------- */
 /*                            Full Experiment Event                           */
 /* -------------------------------------------------------------------------- */
 void Experiment(){
+  /* ------------------------ Initialize New Experiment ----------------------- */
+  HeaderScreen();
+  tft.println("Starting Experiment");
   ReadDTH();
-  experimentStart = millis();
   motionCounter = 0;
   /* ----------------------- AC Power Supply activation ----------------------- */
   RelayActivation();
   /* -------------------------- Data Type Conversion -------------------------- */
   VariableConversion();
-  delay(2000);
+  delay(5000);
   /* ----------------------- Experiment Start Clock Data ---------------------- */
   GetClock();
   dayStart = day;
@@ -308,13 +322,13 @@ void Experiment(){
   minuteStart = minute;
   secondStart = seconds;
   /* --------------- Repetition of events during the experiment --------------- */
+  experimentStart = millis();
   for(int i= 1; i<=numberOfEvents; i++){
     ToneActivation();
     Stimulus();
     MotionDetection();
     Wait();
-    tft.setCursor(0,0);
-    tft.fillScreen(BLACK);
+    HeaderScreen();
     tft.println("Finished Event " + String(i));
     delay(2000);
   }
@@ -330,7 +344,7 @@ void Experiment(){
   secondEnd = seconds;
   /* --------------------- Save data into the microSD card -------------------- */
   SaveData();
-  delay(2000);
+  delay(5000);
   /* ---------------------- AC Power Supply deactivation ---------------------- */
   RelayActivation();
   delay(2000);
@@ -350,31 +364,39 @@ void ESP32UART(){
   int ind3;
   int ind4;
   int ind5;
-
+  int ind6;
+  int ind7;
+  
   if(Serial1.available()){
     readString = Serial1.readString();
+    Serial.println(readString);
     if(readString){
-      tft.setCursor(0,0);
-      tft.fillScreen(BLACK);
-      tft.setTextColor(GREEN);
-      tft.println("Conditioning Chamber");
-      tft.setTextColor(WHITE);
-      tft.println("");
+
+      confirmed = true;
+
+      HeaderScreen();
       tft.println("Received Parameters");
       tft.println("");
       /* -------------------------- Split received string ------------------------- */
       ind1 = readString.indexOf(','); 
-      toneFrequencyStr = readString.substring(0, ind1); 
+      dayOfExperimentStr = readString.substring(0, ind1); 
       ind2 = readString.indexOf(',', ind1+1 );
-      toneTimeStr = readString.substring(ind1+1, ind2);
+      experimentAnimalStr = readString.substring(ind1+1, ind2);
       ind3 = readString.indexOf(',', ind2+1 );
-      stimulationTimeStr = readString.substring(ind2+1, ind3);
+      toneFrequencyStr = readString.substring(ind2+1, ind3);
       ind4 = readString.indexOf(',', ind3+1 );
-      movementAnalysisTimeStr = readString.substring(ind3+1, ind4);
+      toneTimeStr = readString.substring(ind3+1, ind4);
       ind5 = readString.indexOf(',', ind4+1 );
-      intervalTimeStr = readString.substring(ind4+1, ind5);
-      numberOfEventsStr = readString.substring(ind5+1);
+      stimulationTimeStr = readString.substring(ind4+1, ind5);
+      ind6 = readString.indexOf(',', ind5+1 );
+      movementAnalysisTimeStr = readString.substring(ind5+1, ind6);
+      ind7 = readString.indexOf(',', ind6+1 );
+      intervalTimeStr = readString.substring(ind6+1, ind7);
+      numberOfEventsStr = readString.substring(ind7+1);
+
       /* ----------------------- Display received parameters ---------------------- */
+      tft.println("Protocol Day: " + dayOfExperimentStr);
+      tft.println("Experiment Animal: " + experimentAnimalStr);
       tft.println("Tone Freq.: " + toneFrequencyStr + " Hz");
       tft.println("Tone Duration: " + toneTimeStr + " s");
       tft.println("Stim. Duration: " + stimulationTimeStr + " s");
@@ -382,7 +404,7 @@ void ESP32UART(){
       tft.println("Int. Duration: " + intervalTimeStr + " s");
       tft.println("Num. of Events: " + numberOfEventsStr);
     }
-  confirmed = true; // Confirms the received parameters to initiate experiment
+    delay(20000);
   }
 }
 
@@ -422,10 +444,8 @@ void setup() {
   DS3231_set(t);
   /* ------------------------------ microSD Setup ----------------------------- */
   if (!SD.begin(PIN_SD_CS)){
-    Serial.println("SD initialization failed.");
     while (1);
   }else
-  Serial.println("SD initialization done.");
   /* ------------------------------- DTH22 Setup ------------------------------ */
   dht.begin();
 }
