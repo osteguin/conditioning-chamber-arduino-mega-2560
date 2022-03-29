@@ -123,11 +123,17 @@ int yearEnd;
 int hourEnd;
 int minuteEnd;
 int secondEnd;
+String dateStart;
+String timeStart;
+String dateEnd;
+String timeEnd;
+String dataToSave;
 
 /* -------------------------------------------------------------------------- */
 /*                                Screen Header                               */
 /* -------------------------------------------------------------------------- */
 void HeaderScreen(){
+  tft.setTextSize(2);
   tft.setCursor(0,0);
   tft.fillScreen(BLACK);
   tft.setTextColor(GREEN);
@@ -198,6 +204,23 @@ void Discharge(){
 }
 
 /* -------------------------------------------------------------------------- */
+/*                             Display Saved Data                             */
+/* -------------------------------------------------------------------------- */
+void DisplaySaved(){
+    HeaderScreen();
+    tft.println("Rat ID: " + experimentAnimalStr);
+    tft.println("Date Start: " + dateStart);
+    tft.println("Time Start: " + timeStart);
+    tft.println("Date End: " + dateEnd);
+    tft.println("Time End: " + timeEnd);
+    tft.println("Total Time: " + String(experimentTotalTime) + " s");
+    tft.println("Temperature: " + String(temperature));
+    tft.println("Humidity: " + String(humidity));
+    tft.println("Motion Counter: " + String(motionCounter));
+    tft.println("Parameters: " + readString);
+}
+
+/* -------------------------------------------------------------------------- */
 /*                          Save Data to microSD card                         */
 /* -------------------------------------------------------------------------- */
 void SaveData(){
@@ -205,11 +228,12 @@ void SaveData(){
   tft.println("Saving Data to SD");
   myFile = SD.open("data.txt", FILE_WRITE);
   if (myFile) {
-    String dateStart = String(dayStart) + "/" +  String(monthStart) + "/" + String(yearStart);
-    String timeStart = String(hourStart) + ":" + String(minuteStart) + ":" + String(secondStart);
-    String dateEnd = String(dayEnd) + "/" + String(monthEnd) + "/" + String(yearEnd);
-    String timeEnd = String(hourEnd) + ":" + String(minuteEnd) + ":" + String(secondEnd);
-    String dataToSave = dayOfExperimentStr + "," + experimentAnimalStr + "," + dateStart + "," + timeStart + "," + dateEnd + "," + timeEnd + "," + experimentTotalTime + "," + temperature + "," + humidity + "," + motionCounter + "," + toneFrequencyStr + "," + toneTimeStr + "," + stimulationTimeStr + "," + movementAnalysisTimeStr + "," + intervalTimeStr + "," + numberOfEvents;
+    /* ------------- Create timestamp strings and main data to save ------------- */
+    dateStart = String(dayStart) + "/" +  String(monthStart) + "/" + String(yearStart);
+    timeStart = String(hourStart) + ":" + String(minuteStart) + ":" + String(secondStart);
+    dateEnd = String(dayEnd) + "/" + String(monthEnd) + "/" + String(yearEnd);
+    timeEnd = String(hourEnd) + ":" + String(minuteEnd) + ":" + String(secondEnd);
+    dataToSave = dayOfExperimentStr + "," + experimentAnimalStr + "," + dateStart + "," + timeStart + "," + dateEnd + "," + timeEnd + "," + experimentTotalTime + "," + temperature + "," + humidity + "," + motionCounter + "," + toneFrequencyStr + "," + toneTimeStr + "," + stimulationTimeStr + "," + movementAnalysisTimeStr + "," + intervalTimeStr + "," + numberOfEvents;
     Serial.println(dataToSave);
   }
 }
@@ -345,6 +369,9 @@ void Experiment(){
   /* --------------------- Save data into the microSD card -------------------- */
   SaveData();
   delay(5000);
+  /* --------------------------- Display saved data --------------------------- */
+  DisplaySaved();
+  delay(20000);
   /* ---------------------- AC Power Supply deactivation ---------------------- */
   RelayActivation();
   delay(2000);
