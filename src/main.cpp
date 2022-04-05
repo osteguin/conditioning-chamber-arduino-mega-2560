@@ -57,6 +57,7 @@ volatile byte power = true;
 #define RCWL 24
 volatile byte motion = false;
 int motionCounter = 0;
+unsigned int freezingTime = 0;
 
 /* ------------------------ PAM8406 (Audio Amplifier) ----------------------- */
 #define PAM8406 26
@@ -87,14 +88,17 @@ File myFile;
 
 /* -------------------------- HTML Form User Input -------------------------- */
 String readString;
+String experimentAnimalStr;
+String dayOfExperimentStr;
+String explorationTimeStr;
 String toneFrequencyStr;
 String toneTimeStr;
 String stimulationTimeStr;
 String movementAnalysisTimeStr;
 String intervalTimeStr;
 String numberOfEventsStr;
-String experimentAnimalStr; // Missing in HTML
-String dayOfExperimentStr; // Missing in HTML
+
+int explorationTime;
 int toneFrequency;
 unsigned int toneTime;
 unsigned int stimulationTime;
@@ -137,7 +141,7 @@ void HeaderScreen(){
   tft.setCursor(0,0);
   tft.fillScreen(BLACK);
   tft.setTextColor(GREEN);
-  tft.println("Conditioning Chamber v0.2");
+  tft.println("Conditioning Chamber v0.21");
   tft.setTextColor(WHITE);
   tft.println("");
 }
@@ -216,7 +220,7 @@ void DisplaySaved(){
     tft.println("Total Time: " + String(experimentTotalTime) + " s");
     tft.println("Temperature: " + String(temperature));
     tft.println("Humidity: " + String(humidity));
-    tft.println("Motion Counter: " + String(motionCounter));
+    tft.println("Freezing Time: " + String(freezingTime));
     tft.println("Parameters: " + readString);
 }
 
@@ -233,8 +237,20 @@ void SaveData(){
     timeStart = String(hourStart) + ":" + String(minuteStart) + ":" + String(secondStart);
     dateEnd = String(dayEnd) + "/" + String(monthEnd) + "/" + String(yearEnd);
     timeEnd = String(hourEnd) + ":" + String(minuteEnd) + ":" + String(secondEnd);
-    dataToSave = dayOfExperimentStr + "," + experimentAnimalStr + "," + dateStart + "," + timeStart + "," + dateEnd + "," + timeEnd + "," + experimentTotalTime + "," + temperature + "," + humidity + "," + motionCounter + "," + toneFrequencyStr + "," + toneTimeStr + "," + stimulationTimeStr + "," + movementAnalysisTimeStr + "," + intervalTimeStr + "," + numberOfEvents;
+    dataToSave = dayOfExperimentStr + "," + experimentAnimalStr + "," + dateStart + "," + timeStart + "," + dateEnd + "," + timeEnd + "," + experimentTotalTime + "," + temperature + "," + humidity + "," + freezingTime + "," + explorationTimeStr + "," + toneFrequencyStr + "," + toneTimeStr + "," + stimulationTimeStr + "," + movementAnalysisTimeStr + "," + intervalTimeStr + "," + numberOfEvents;
     Serial.println(dataToSave);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Exploration Time                              */
+/* -------------------------------------------------------------------------- */
+void Exploration(){
+  unsigned long timeLimit = intervalTime;
+  unsigned long startMillis = millis();
+  tft.fillScreen(YELLOW);
+  while(millis() - startMillis < (timeLimit)){
+    
   }
 }
 
@@ -279,9 +295,11 @@ void Stimulus(){
 void MotionDetection(){
   unsigned long timeLimit = movementAnalysisTime;
   unsigned long startMillis = millis();
+  unsigned long actualMillis;
   tft.fillScreen(GREEN);
   while(millis() - startMillis < (timeLimit)){
     int val = digitalRead(RCWL);
+    actualMillis = millis();
     if (val == HIGH) {
       if (motion == false) {
         motion = true;
@@ -294,6 +312,7 @@ void MotionDetection(){
         motion = false;
         digitalWrite(LED, LOW);
       }
+      //freezingTime = freezingTime + millis() - actualMillis; FIX FREEZING TIME COUNTER
     }
   }
   digitalWrite(LED, LOW);
@@ -307,7 +326,7 @@ void Wait(){
   unsigned long startMillis = millis();
   tft.fillScreen(CYAN);
   while(millis() - startMillis < (timeLimit)){
-    motion = false;
+    
   }
 }
 
@@ -348,6 +367,7 @@ void Experiment(){
   /* --------------- Repetition of events during the experiment --------------- */
   experimentStart = millis();
   for(int i= 1; i<=numberOfEvents; i++){
+    Exploration();
     ToneActivation();
     Stimulus();
     MotionDetection();
@@ -358,6 +378,7 @@ void Experiment(){
   }
   experimentEnd = millis();
   experimentTotalTime = (experimentEnd - experimentStart) / 1000;
+  freezingTime = freezingTime / 1000;
   /* ------------------------ Experiment End Clock Data ----------------------- */
   GetClock();
   dayEnd = day;
@@ -383,9 +404,9 @@ void Experiment(){
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                 ESP32 UART                                 */
+/*                                    UART                                    */
 /* -------------------------------------------------------------------------- */
-void ESP32UART(){
+void UART(){
   int ind1;
   int ind2;
   int ind3;
@@ -393,6 +414,7 @@ void ESP32UART(){
   int ind5;
   int ind6;
   int ind7;
+  int ind8;
   
   if(Serial1.available()){
     readString = Serial1.readString();
@@ -410,20 +432,23 @@ void ESP32UART(){
       ind2 = readString.indexOf(',', ind1+1 );
       experimentAnimalStr = readString.substring(ind1+1, ind2);
       ind3 = readString.indexOf(',', ind2+1 );
-      toneFrequencyStr = readString.substring(ind2+1, ind3);
+      explorationTimeStr = readString.substring(ind2+1, ind3);
       ind4 = readString.indexOf(',', ind3+1 );
-      toneTimeStr = readString.substring(ind3+1, ind4);
+      toneFrequencyStr = readString.substring(ind3+1, ind4);
       ind5 = readString.indexOf(',', ind4+1 );
-      stimulationTimeStr = readString.substring(ind4+1, ind5);
+      toneTimeStr = readString.substring(ind4+1, ind5);
       ind6 = readString.indexOf(',', ind5+1 );
-      movementAnalysisTimeStr = readString.substring(ind5+1, ind6);
+      stimulationTimeStr = readString.substring(ind5+1, ind6);
       ind7 = readString.indexOf(',', ind6+1 );
-      intervalTimeStr = readString.substring(ind6+1, ind7);
-      numberOfEventsStr = readString.substring(ind7+1);
+      movementAnalysisTimeStr = readString.substring(ind6+1, ind7);
+      ind8 = readString.indexOf(',', ind7+1 );
+      intervalTimeStr = readString.substring(ind7+1, ind8);
+      numberOfEventsStr = readString.substring(ind8+1);
 
       /* ----------------------- Display received parameters ---------------------- */
       tft.println("Protocol Day: " + dayOfExperimentStr);
       tft.println("Experiment Animal: " + experimentAnimalStr);
+      tft.println("Exploration Duration: " + explorationTimeStr + " s");
       tft.println("Tone Freq.: " + toneFrequencyStr + " Hz");
       tft.println("Tone Duration: " + toneTimeStr + " s");
       tft.println("Stim. Duration: " + stimulationTimeStr + " s");
@@ -481,7 +506,7 @@ void setup() {
 /*                                    Main                                    */
 /* -------------------------------------------------------------------------- */
 void loop() {
-  ESP32UART();
+  UART();
   if(confirmed == true){
     Experiment();
     confirmed = false;
