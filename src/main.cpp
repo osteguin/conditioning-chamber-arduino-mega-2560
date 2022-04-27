@@ -32,6 +32,8 @@
 #define WHITE 0xFFFF
 Elegoo_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 
+/* --------------------------------- Version -------------------------------- */
+String version = "0.22";
 /* ------------------------ DS3231 (Real Time Clock) ------------------------ */
 struct ts t;
 /* ----------------------------- Set Actual Time ---------------------------- */
@@ -49,8 +51,11 @@ int day;
 int month;
 int year;
 
+/* ------------------------------ RELAY  (Lamp) ----------------------------- */
+#define LAMP 22
+
 /* ------------------------- RELAY (AC Power Supply) ------------------------ */
-#define RELAY 25
+#define SUPPLY 23
 volatile byte power = true;
 
 /* ----------------------- RCWL-0516 (Movement Sensor) ---------------------- */
@@ -59,28 +64,38 @@ volatile byte motion = false;
 int motionCounter = 0;
 unsigned int freezingTime = 0;
 
-/* ------------------------ PAM8406 (Audio Amplifier) ----------------------- */
-#define PAM8406 26
-
-/* ----------------- DTH22 (Humidity and Temperature Sensor) ---------------- */
-#define DHTPIN 27
+/* ----------------- DHT22 (Humidity and Temperature Sensor) ---------------- */
+#define DHTPIN 25
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 
+/* ------------------------ PAM8406 (Audio Amplifier) ----------------------- */
+#define PAM8406 26
+
+/* ------------------------------- Push Button ------------------------------ */
+#define pushButton1 27
+#define pushButton2 28
+volatile byte status1 = LOW;
+volatile byte status2 = LOW;
+
+
 /* --------------------- BARS GND (Floating Ground Bars) -------------------- */
-#define firstBAR 34
-#define lastBAR 47
+#define firstBAR 30
+#define lastBAR 47 // Add two more bars
+
+/* --------------------------- Current Calibration -------------------------- */
+#define CALIBRATION 48
+#define VOLTAGEREAD A15
+volatile float currentValue = 0;
+float calibrationResistor = 993;
 
 /* --------------------- RESISTOR (Capacitor Discharge) --------------------- */
-#define RESISTOR 30
+#define RESISTOR 49
 unsigned int dischargeTime = 150;
 
 /* ----------------- microSD (Micro SD Card Breakout Board) ----------------- */
 #define PIN_SD_CS 53
 File myFile;
-
-/* ----------------------------------- LED ---------------------------------- */
-#define LED 31
 
 /* -------------------------------------------------------------------------- */
 /*                           Expertiment Parameters                           */
@@ -141,7 +156,7 @@ void HeaderScreen(){
   tft.setCursor(0,0);
   tft.fillScreen(BLACK);
   tft.setTextColor(GREEN);
-  tft.println("Conditioning Chamber v0.21");
+  tft.println("Conditioning Chamber v" + version);
   tft.setTextColor(WHITE);
   tft.println("");
 }
@@ -178,19 +193,6 @@ void GetClock(){
   day = t.mday;
   month = t.mon;
   year = t.year;
-}
-
-/* -------------------------------------------------------------------------- */
-/*                               AC Power Supply                              */
-/* -------------------------------------------------------------------------- */
-void RelayActivation(){
-    power = !power;
-    if(power){ 
-        digitalWrite(RELAY, HIGH);
-    }
-    else {
-        digitalWrite(RELAY, LOW);
-    }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -237,8 +239,10 @@ void SaveData(){
     timeStart = String(hourStart) + ":" + String(minuteStart) + ":" + String(secondStart);
     dateEnd = String(dayEnd) + "/" + String(monthEnd) + "/" + String(yearEnd);
     timeEnd = String(hourEnd) + ":" + String(minuteEnd) + ":" + String(secondEnd);
-    dataToSave = dayOfExperimentStr + "," + experimentAnimalStr + "," + dateStart + "," + timeStart + "," + dateEnd + "," + timeEnd + "," + experimentTotalTime + "," + temperature + "," + humidity + "," + freezingTime + "," + explorationTimeStr + "," + toneFrequencyStr + "," + toneTimeStr + "," + stimulationTimeStr + "," + movementAnalysisTimeStr + "," + intervalTimeStr + "," + numberOfEvents;
+    dataToSave = dayOfExperimentStr + "," + experimentAnimalStr + "," + dateStart + "," + timeStart + "," + dateEnd + "," + timeEnd + "," + experimentTotalTime + "," + temperature + "," + humidity + "," + freezingTime + "," +  motionCounter + "," + explorationTimeStr + "," + toneFrequencyStr + "," + toneTimeStr + "," + stimulationTimeStr + "," + movementAnalysisTimeStr + "," + intervalTimeStr + "," + numberOfEvents;
     Serial.println(dataToSave);
+    myFile.println(dataToSave);
+    myFile.close();
   }
 }
 
@@ -250,7 +254,7 @@ void Exploration(){
   unsigned long startMillis = millis();
   tft.fillScreen(YELLOW);
   while(millis() - startMillis < (timeLimit)){
-    
+
   }
 }
 
@@ -301,21 +305,18 @@ void MotionDetection(){
     int val = digitalRead(RCWL);
     actualMillis = millis();
     if (val == HIGH) {
+      motionCounter++;
       if (motion == false) {
         motion = true;
-        digitalWrite(LED, HIGH);
-        motionCounter++;
        }
     }
     else {
       if (motion == true) {
         motion = false;
-        digitalWrite(LED, LOW);
       }
-      //freezingTime = freezingTime + millis() - actualMillis; FIX FREEZING TIME COUNTER
+      freezingTime = motionCounter * 2;
     }
   }
-  digitalWrite(LED, LOW);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -350,12 +351,11 @@ void Experiment(){
   HeaderScreen();
   tft.println("Starting Experiment");
   ReadDTH();
-  motionCounter = 0;
-  /* ----------------------- AC Power Supply activation ----------------------- */
-  RelayActivation();
+  motionCounter = 0; 
+  digitalWrite(CALIBRATION, LOW);
   /* -------------------------- Data Type Conversion -------------------------- */
   VariableConversion();
-  delay(5000);
+  delay(1000);
   /* ----------------------- Experiment Start Clock Data ---------------------- */
   GetClock();
   dayStart = day;
@@ -374,8 +374,9 @@ void Experiment(){
     Wait();
     HeaderScreen();
     tft.println("Finished Event " + String(i));
-    delay(2000);
+    delay(1000);
   }
+  digitalWrite(SUPPLY, HIGH);
   experimentEnd = millis();
   experimentTotalTime = (experimentEnd - experimentStart) / 1000;
   freezingTime = freezingTime / 1000;
@@ -389,34 +390,47 @@ void Experiment(){
   secondEnd = seconds;
   /* --------------------- Save data into the microSD card -------------------- */
   SaveData();
-  delay(5000);
+  delay(1000);
   /* --------------------------- Display saved data --------------------------- */
   DisplaySaved();
-  delay(20000);
-  /* ---------------------- AC Power Supply deactivation ---------------------- */
-  RelayActivation();
-  delay(2000);
+  delay(1000);
   /* --------------------------- Capacitor Discharge -------------------------- */
   Discharge();
-  delay(2000);
   /* ------------------------------- Main Screen ------------------------------ */
   MainScreen();
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Current Reading                               */
+/* -------------------------------------------------------------------------- */
+void Calibration(){
+  digitalWrite(SUPPLY, LOW);
+  digitalWrite(CALIBRATION, HIGH);
+  volatile float voltageReading;
+  voltageReading = analogRead(VOLTAGEREAD);
+  currentValue = ((voltageReading * float(5) * float(1000)) / (float(1023) * calibrationResistor));
+  //Serial.println(currentValue);
+  tft.setTextSize(3);
+  tft.setCursor(150,200);
+  tft.println(String(currentValue)+ " mA");
 }
 
 /* -------------------------------------------------------------------------- */
 /*                                    UART                                    */
 /* -------------------------------------------------------------------------- */
 void UART(){
-  int ind1;
-  int ind2;
-  int ind3;
-  int ind4;
-  int ind5;
-  int ind6;
-  int ind7;
-  int ind8;
   
   if(Serial1.available()){
+
+    int ind1;
+    int ind2;
+    int ind3;
+    int ind4;
+    int ind5;
+    int ind6;
+    int ind7;
+    int ind8;
+
     readString = Serial1.readString();
     Serial.println(readString);
     if(readString){
@@ -475,12 +489,16 @@ void setup() {
   tft.begin(0x9341);
   MainScreen();
   /* -------------------------------- Pin Setup ------------------------------- */
-  pinMode(RELAY, OUTPUT);
-  digitalWrite(RELAY, HIGH);
+  pinMode(SUPPLY, OUTPUT);
+  digitalWrite(SUPPLY, HIGH);
   pinMode(RCWL, INPUT);
   pinMode(PAM8406, OUTPUT);
   pinMode(DHTPIN, INPUT);
   pinMode(RESISTOR, OUTPUT);
+  pinMode(CALIBRATION, OUTPUT);
+  pinMode(VOLTAGEREAD, INPUT);
+  pinMode(pushButton1, INPUT);
+  pinMode(pushButton2, INPUT);
   for(int i=firstBAR; i<=lastBAR; i++)
   {
     pinMode(i, OUTPUT);
@@ -496,7 +514,8 @@ void setup() {
   DS3231_set(t);
   /* ------------------------------ microSD Setup ----------------------------- */
   if (!SD.begin(PIN_SD_CS)){
-    while (1);
+    //while (1);
+    Serial.println("SD Failed");
   }else
   /* ------------------------------- DTH22 Setup ------------------------------ */
   dht.begin();
@@ -506,9 +525,25 @@ void setup() {
 /*                                    Main                                    */
 /* -------------------------------------------------------------------------- */
 void loop() {
-  UART();
-  if(confirmed == true){
-    Experiment();
-    confirmed = false;
+  
+  while(status1 == LOW){
+    UART();
+    if(confirmed == true){
+      Experiment();
+      confirmed = false;
+    }
+    status1 = digitalRead(pushButton1);
   }
+  if(status1 == HIGH)
+  {
+    Calibration();
+    status1 = digitalRead(pushButton1);
+    if(status1 == LOW)
+    {
+      digitalWrite(SUPPLY, HIGH);
+      digitalWrite(CALIBRATION, LOW);
+      MainScreen();
+    }
+  }
+                                                      
 }
